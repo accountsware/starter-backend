@@ -7,6 +7,7 @@ import {
     UserActivateModel,
     UserAddModel,
     UserIdModel,
+    UserModel,
     UserPasswordResetKeyModel,
     UserPasswordResetModel,
     UserViewModel
@@ -40,14 +41,23 @@ export class UserService {
             });
     }
 
-    update({ first_name, last_name, id }: UserViewModel) {
-        return User.findById(id).then(user => {
-            if (user) {
-               user.update({
-                   first_name: first_name,
-                   last_name: last_name
-               }).then(q => q);
-            }
+    update({ first_name, last_name }: UserViewModel, token) {
+        return this.getAccount(token).then(q => {
+            return User.findById(q.id).then(u => {
+                return u.update({
+                    first_name,
+                    last_name
+                }).then(q => q);
+            });
+        });
+    }
+
+    updateAsAdmin({ first_name, last_name, id }: UserViewModel) {
+        return User.findById(id).then(u => {
+            return u.update({
+                first_name,
+                last_name
+            }).then(q => q);
         });
     }
 

@@ -6,7 +6,8 @@ import { userRules } from '../rules/user.rules';
 import { UserService } from '../services/user.service';
 import {
     UserActivateModel,
-    UserAddModel, UserIdModel,
+    UserAddModel,
+    UserIdModel,
     UserPasswordResetKeyModel,
     UserPasswordResetModel,
     UserViewModel
@@ -155,7 +156,7 @@ userRouter.post('/api/account', userRules['forRegister'], (req: core.Request, re
     });
 });
 
-userRouter.put('/api/account', userRules['forUserAccount'], (req: core.Request, res: core.Response) => {
+userRouter.put('/api/account', userRules['forUpdateUserAccount'], (req: core.Request, res: core.Response) => {
     logger.debug('Updating current account');
 
     const errors = validationResult(req);
@@ -167,15 +168,17 @@ userRouter.put('/api/account', userRules['forUserAccount'], (req: core.Request, 
         return res.status(422).json(msg);
     }
 
-    const payload = matchedData(req) as UserViewModel;
-    userService.update(payload).then(() => {
+    const payload = matchedData(req, {locations: ['body', 'headers']}) as any;
+    const token = payload.authorization.split(' ')[1];
+
+    userService.update(payload, token).then(() => {
         msg.success = 1;
-        msg.data.push(payload);
+        msg.data.push('Account updated');
         res.json(msg);
     });
 });
 
-userRouter.put('/api/admin/account/:id', userRules['forAdminAccount'], (req: core.Request, res: core.Response) => {
+userRouter.put('/api/admin/account/:id', userRules['forUpdateUserAccountAsAdmin'], (req: core.Request, res: core.Response) => {
     logger.debug('Updating current account by id.');
 
     const errors = validationResult(req);
@@ -188,13 +191,15 @@ userRouter.put('/api/admin/account/:id', userRules['forAdminAccount'], (req: cor
     }
 
     const payload = matchedData(req, {locations: ['body', 'params']}) as UserViewModel;
-    userService.update(payload).then(() => {
+    logger.debug(payload);
+    userService.updateAsAdmin(payload).then(() => {
         msg.success = 1;
         msg.data.push(payload);
         res.json(msg);
     });
 });
 
+//TODO: test this method
 userRouter.put('/api/account/password', userRules['forUpdatePassword'], (req: core.Request, res: core.Response) => {
     logger.debug('Updating current account by id.');
 
@@ -215,6 +220,7 @@ userRouter.put('/api/account/password', userRules['forUpdatePassword'], (req: co
     });
 });
 
+//TODO: test this method
 userRouter.post('/api/account/reset/password', userRules['forForgotPassword'], (req: core.Request, res: core.Response) => {
     logger.debug('Initiating password reset.');
 
@@ -233,6 +239,7 @@ userRouter.post('/api/account/reset/password', userRules['forForgotPassword'], (
     });
 });
 
+//TODO: test this method
 userRouter.put('/api/account/reset/password/:reset_key', userRules['forResetPassword'], (req: core.Request, res: core.Response) => {
     logger.debug('Resetting password using reset key.');
 
@@ -253,6 +260,7 @@ userRouter.put('/api/account/reset/password/:reset_key', userRules['forResetPass
     });
 });
 
+//TODO: test this method
 userRouter.post('/api/account/activate', userRules['forActivate'], (req: core.Request, res: core.Response) => {
     logger.debug('Activating account');
 
@@ -273,6 +281,7 @@ userRouter.post('/api/account/activate', userRules['forActivate'], (req: core.Re
     });
 });
 
+//TODO: test this method
 userRouter.delete('/api/account/:id', userRules['forRemove'], (req: core.Request, res: core.Response) => {
     logger.debug('Removing account.');
 

@@ -1,5 +1,5 @@
 import * as bcrypt from 'bcrypt';
-import { check, header } from 'express-validator/check';
+import {body, check, header} from 'express-validator/check';
 import { User } from '../models/user';
 import { UserService } from '../services/user.service';
 
@@ -10,13 +10,13 @@ export const userRules = {
             .custom(email => User.find({ where: { email } }).then(u => !!!u)).withMessage('Email exists'),
         check('password')
             .isLength({ min: 8 }).withMessage('Invalid password'),
-        check('confirmPassword')
+        check('confirm_password')
             .custom((confirmPassword, { req }) => req.body.password === confirmPassword).withMessage('Passwords are different')
     ],
     forUpdatePassword: [
         check('password')
             .isLength({ min: 8 }).withMessage('Invalid password'),
-        check('confirmPassword')
+        check('confirm_password')
             .custom((confirmPassword, { req }) => req.body.password === confirmPassword).withMessage('Passwords are different')
     ],
     forForgotPassword: [
@@ -27,7 +27,7 @@ export const userRules = {
     forResetPassword: [
         check('password')
             .isLength({ min: 8 }).withMessage('Invalid password'),
-        check('confirmPassword')
+        check('confirm_password')
             .custom((confirmPassword, { req }) => req.body.password === confirmPassword).withMessage('Passwords are different'),
         check('reset_key')
             .isLength( { min: 20, max: 20 }).withMessage('Invalid reset key')
@@ -68,6 +68,24 @@ export const userRules = {
                 return u.verifyToken(authSplit[1]).then(q => q);
             }).withMessage('Invalid token')
     ],
+    forUpdateUserAccount: [
+        header('Authorization')
+            .custom((token, { req }) => {
+                const auth = req.headers.authorization;
+                const authSplit = auth.split(' ');
+                if (authSplit.length !== 2 || authSplit[0] !== 'Bearer') {
+                    return new Promise((resolve, reject) => {
+                        resolve(false);
+                    })
+                }
+                const u: UserService = new UserService();
+                return u.verifyToken(authSplit[1]).then(q => q);
+            }).withMessage('Invalid token'),
+        check('first_name')
+            .isString().withMessage('First name must be a string'),
+        check('last_name')
+            .isString().withMessage('Last name must be a string')
+    ],
     forAdminAccount: [
         header('Authorization')
             .custom((token, { req }) => {
@@ -81,5 +99,26 @@ export const userRules = {
                 const u: UserService = new UserService();
                 return u.verifyAdminToken(authSplit[1]).then(q => q);
             }).withMessage('Invalid token')
+    ],
+    forUpdateUserAccountAsAdmin: [
+        header('Authorization')
+            .custom((token, { req }) => {
+                const auth = req.headers.authorization;
+                const authSplit = auth.split(' ');
+                if (authSplit.length !== 2 || authSplit[0] !== 'Bearer') {
+                    return new Promise((resolve, reject) => {
+                        resolve(false);
+                    })
+                }
+                const u: UserService = new UserService();
+                return u.verifyAdminToken(authSplit[1]).then(q => q);
+            }).withMessage('Invalid token'),
+        check('first_name')
+            .isString().withMessage('First name must be a string'),
+        check('last_name')
+            .isString().withMessage('Last name must be a string'),
+        check('id')
+            .exists().withMessage('You must provide a user ID')
+            .isNumeric().withMessage('The user ID must be numeric')
     ]
 };
