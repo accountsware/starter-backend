@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../out-tsc/app",
+    "baseUrl": "./",
+    "module": "commonjs",
+    "types": []
+  },
+  "exclude": [
+    "test.ts",
+    "**/*.spec.ts",
+    "index.ts",
+    "src/instances/*",
+    "src/models/*",
+    "src/routers/*",
+    "src/rules/*",
+    "src/services/*",
+    "env-variables.ts"
+  ]
+}
