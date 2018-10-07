@@ -144,14 +144,9 @@ userRouter.post('/api/account', userRules['forRegister'], (req: core.Request, re
     const payload = matchedData(req) as UserAddModel;
     const user = userService.register(payload);
 
-    return user.then(u => {
+    return user.then(() => {
         msg.success = 1;
-        msg.data.push({
-            id: u.id,
-            email: u.email,
-            first_name: u.first_name,
-            last_name: u.last_name
-        });
+        msg.data.push('Account created');
         res.json(msg);
     });
 });
@@ -194,14 +189,13 @@ userRouter.put('/api/admin/account/:id', userRules['forUpdateUserAccountAsAdmin'
     logger.debug(payload);
     userService.updateAsAdmin(payload).then(() => {
         msg.success = 1;
-        msg.data.push(payload);
+        msg.data.push('Account updated');
         res.json(msg);
     });
 });
 
-//TODO: test this method
 userRouter.put('/api/account/password', userRules['forUpdatePassword'], (req: core.Request, res: core.Response) => {
-    logger.debug('Updating current account by id.');
+    logger.debug('Updating current account password');
 
     const errors = validationResult(req);
     const msg = new ResponseMessage();
@@ -212,15 +206,16 @@ userRouter.put('/api/account/password', userRules['forUpdatePassword'], (req: co
         return res.status(422).json(msg);
     }
 
-    const payload = matchedData(req) as UserAddModel;
-    userService.updatePassword(payload).then(() => {
+    const payload = matchedData(req, {locations: ['body', 'headers']}) as any;
+    const token = payload.authorization.split(' ')[1];
+
+    userService.updatePassword(payload, token).then(() => {
         msg.success = 1;
         msg.data.push('Password updated');
         res.json(msg);
     });
 });
 
-//TODO: test this method
 userRouter.post('/api/account/reset/password', userRules['forForgotPassword'], (req: core.Request, res: core.Response) => {
     logger.debug('Initiating password reset.');
 
@@ -234,12 +229,18 @@ userRouter.post('/api/account/reset/password', userRules['forForgotPassword'], (
     }
 
     const payload = matchedData(req) as UserPasswordResetModel;
-    userService.requestPasswordReset(payload).then(msg => {
+    userService.requestPasswordReset(payload).then(u => {
+        if (u) {
+            msg.success = 1;
+            msg.data.push('Password reset requested.');
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
         res.json(msg);
     });
 });
 
-//TODO: test this method
 userRouter.put('/api/account/reset/password/:reset_key', userRules['forResetPassword'], (req: core.Request, res: core.Response) => {
     logger.debug('Resetting password using reset key.');
 
@@ -254,13 +255,17 @@ userRouter.put('/api/account/reset/password/:reset_key', userRules['forResetPass
 
     const payload = matchedData(req, {locations: ['body', 'params']}) as UserPasswordResetKeyModel;
     userService.updatePasswordUsingResetKey(payload).then(([rowsUpdated, ums]) => {
-        msg.success = 1;
-        msg.data.push('Password reset');
+        if (ums.length > 0) {
+            msg.success = 1;
+            msg.data.push('Password reset');
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
         res.json(msg);
     });
 });
 
-//TODO: test this method
 userRouter.post('/api/account/activate', userRules['forActivate'], (req: core.Request, res: core.Response) => {
     logger.debug('Activating account');
 
@@ -275,14 +280,18 @@ userRouter.post('/api/account/activate', userRules['forActivate'], (req: core.Re
 
     const payload = matchedData(req) as UserActivateModel;
     userService.activateAccount(payload).then(([rowsUpdated, ums]) => {
-        msg.success = 1;
-        msg.data.push('Account activated.');
+        if (ums.length > 0) {
+            msg.success = 1;
+            msg.data.push('Account activated.');
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
         res.json(msg);
     });
 });
 
-//TODO: test this method
-userRouter.delete('/api/account/:id', userRules['forRemove'], (req: core.Request, res: core.Response) => {
+userRouter.delete('/api/account/:id', userRules['forRemoveUser'], (req: core.Request, res: core.Response) => {
     logger.debug('Removing account.');
 
     const errors = validationResult(req);
@@ -296,8 +305,38 @@ userRouter.delete('/api/account/:id', userRules['forRemove'], (req: core.Request
 
     const payload = matchedData(req, {locations: ['params']}) as UserIdModel;
     userService.remove(payload).then(num => {
-        msg.success = 1;
-        msg.data.push('Account removed.');
+        if (num) {
+            msg.success = 1;
+            msg.data.push('Account removed.');
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
+        res.json(msg);
+    });
+});
+
+userRouter.delete('/api/admin/account/:id', userRules['forRemoveUserAsAdmin'], (req: core.Request, res: core.Response) => {
+    logger.debug('Removing account.');
+
+    const errors = validationResult(req);
+    const msg = new ResponseMessage();
+
+    if (!errors.isEmpty()) {
+        msg.success = 0;
+        msg.data = errors.array();
+        return res.status(422).json(msg);
+    }
+
+    const payload = matchedData(req, {locations: ['params']}) as UserIdModel;
+    userService.remove(payload).then(num => {
+        if (num) {
+            msg.success = 1;
+            msg.data.push('Account removed.');
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
         res.json(msg);
     });
 });
@@ -316,10 +355,14 @@ userRouter.post('/api/login', userRules['forLogin'], (req: core.Request, res: co
     const payload = matchedData(req) as UserAddModel;
     const token = userService.login(payload);
 
-    // return token.then(t => res.json(t));
     return token.then(t => {
-        msg.success = 1;
-        msg.data.push(t.token);
+        if (t) {
+            msg.success = 1;
+            msg.data.push(t.token);
+        } else {
+            msg.success = 0;
+            msg.data.push('Account not found');
+        }
         res.json(msg);
     });
 });

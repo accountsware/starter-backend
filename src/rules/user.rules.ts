@@ -1,5 +1,5 @@
 import * as bcrypt from 'bcrypt';
-import {body, check, header} from 'express-validator/check';
+import { check, header, param } from 'express-validator/check';
 import { User } from '../models/user';
 import { UserService } from '../services/user.service';
 
@@ -14,6 +14,18 @@ export const userRules = {
             .custom((confirmPassword, { req }) => req.body.password === confirmPassword).withMessage('Passwords are different')
     ],
     forUpdatePassword: [
+        header('Authorization')
+            .custom((token, { req }) => {
+                const auth = req.headers.authorization;
+                const authSplit = auth.split(' ');
+                if (authSplit.length !== 2 || authSplit[0] !== 'Bearer') {
+                    return new Promise((resolve, reject) => {
+                        resolve(false);
+                    })
+                }
+                const u: UserService = new UserService();
+                return u.verifyToken(authSplit[1]).then(q => q);
+            }).withMessage('Invalid token'),
         check('password')
             .isLength({ min: 8 }).withMessage('Invalid password'),
         check('confirm_password')
@@ -22,7 +34,7 @@ export const userRules = {
     forForgotPassword: [
         check('email')
             .isEmail().withMessage('Invalid email format')
-            .custom(email => User.find({ where: { email } }).then(u => !!!u)).withMessage('Email does not exist')
+            .custom(email => User.find({ where: { email } }).then(u => u)).withMessage('Email does not exist')
     ],
     forResetPassword: [
         check('password')
@@ -40,9 +52,37 @@ export const userRules = {
             .matches(/[a-zA-Z0-9]+/).withMessage('Invalid activation key')
             .custom(activationKey => User.find({ where: { activation_key: activationKey } }).then(u => u)).withMessage('Activation key does not exist')
     ],
-    forRemove: [
-        check('id').isNumeric().withMessage('ID must be numeric')
-            .custom(id => User.findById(id).then(u => !!!u)).withMessage('User does not exist')
+    forRemoveUser: [
+        param('id').isNumeric().withMessage('ID must be numeric')
+            .custom(id => User.findById(id).then(u => u)).withMessage('User does not exist'),
+        header('Authorization')
+            .custom((token, { req }) => {
+                const auth = req.headers.authorization;
+                const authSplit = auth.split(' ');
+                if (authSplit.length !== 2 || authSplit[0] !== 'Bearer') {
+                    return new Promise((resolve, reject) => {
+                        resolve(false);
+                    })
+                }
+                const u: UserService = new UserService();
+                return u.verifyToken(authSplit[1]).then(q => q);
+            }).withMessage('Invalid token')
+    ],
+    forRemoveUserAsAdmin: [
+        param('id').isNumeric().withMessage('ID must be numeric')
+            .custom(id => User.findById(id).then(u => u)).withMessage('User does not exist'),
+        header('Authorization')
+            .custom((token, { req }) => {
+                const auth = req.headers.authorization;
+                const authSplit = auth.split(' ');
+                if (authSplit.length !== 2 || authSplit[0] !== 'Bearer') {
+                    return new Promise((resolve, reject) => {
+                        resolve(false);
+                    });
+                }
+                const u: UserService = new UserService();
+                return u.verifyAdminToken(authSplit[1]).then(q => q);
+            }).withMessage('Invalid token')
     ],
     forLogin: [
         check('email')

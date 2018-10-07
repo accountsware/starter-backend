@@ -1,6 +1,6 @@
 {
   "name": "starter-backend",
-  "version": "1.0.0-alpha",
+  "version": "1.0.0",
   "description": "A simple starter project using JWT and Sequelize",
   "main": "src/index.ts",
   "scripts": {

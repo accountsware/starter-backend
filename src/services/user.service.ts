@@ -7,7 +7,6 @@ import {
     UserActivateModel,
     UserAddModel,
     UserIdModel,
-    UserModel,
     UserPasswordResetKeyModel,
     UserPasswordResetModel,
     UserViewModel
@@ -16,65 +15,106 @@ import { UserAuthority } from '../models/user-authority';
 import * as Sequelize from 'sequelize';
 import { getLogger, Logger } from 'log4js';
 import { Email } from '../instances/email';
-import { ResponseMessage } from "../common/response-message";
+import { ResponseMessage } from '../common/response-message';
 
 export class UserService {
     private readonly _saltRounds = 12;
     private readonly _jwtSecret = '0.rfyj3n9nqh';
 
-    private static _user;
-
-    private logger: Logger = getLogger('user-authority');
+    private logger: Logger = getLogger('user');
 
     constructor() {
         this.logger.level = process.env.LOGGER_LEVEL;
     }
 
-    register({ email, password }: UserAddModel) {
+    register({ email, password }: UserAddModel): Promise<void> {
+        const _this = this;
         return bcrypt.hash(password, this._saltRounds)
             .then(hash => {
-                return User.create({ email, password: hash })
+                return User.create({ email, password: hash, activation_key: this.makeRandomString(20) })
                     .then(u => {
-                        UserAuthority.create({user_id: u!.id, authority_id: 2});
-                        return this.getUserById(u!.id);
+                        return User.count().then(c => {
+                            let authorityId;
+                            if (c === 1) {
+                                // the first person to register is the admin.
+                                authorityId = 1;
+                            } else {
+                                authorityId = 2;
+                            }
+                            UserAuthority.create({user_id: u!.id, authority_id: authorityId}).then(q => {
+                                const msg = new ResponseMessage();
+                                const activateUrl = process.env.BASE_WEB_CLIENT_URL + 'activate/' + u.activation_key;
+                                const text = 'A new account has been created for you at ' + process.env.BASE_WEB_CLIENT_URL + '.  To activate this account, please visit ' + activateUrl + '.';
+                                const html = '<h3>A new account has been created for you at <a href="' + process.env.BASE_WEB_CLIENT_URL + '">DonaldMcDougal.com</a></h3>. ' +
+                                    '<p>To activate this account, please visit <a href="' + activateUrl + '">' + activateUrl + '</a></p>';
+                                Email.sendEmail(process.env.CONTACT_EMAIL, [u.email], [], 'DonaldMcDougal.com account creation',
+                                    text, html).then(() => {
+                                    _this.logger.debug('Account created');
+                                    msg.success = 1;
+                                    msg.data.push('Account created.  Please check your email to activate your account.');
+                                    return msg;
+                                }).then(msg => {
+                                    if (msg.success === 0) {
+                                        _this.logger.error(msg.data[0]);
+                                    } else {
+                                        _this.logger.debug('Email sent.');
+                                    }
+                                    return msg;
+                                }).catch((error) => {
+                                    _this.logger.error(error);
+                                });
+                            });
+                        });
                     })
             });
     }
 
     update({ first_name, last_name }: UserViewModel, token) {
         return this.getAccount(token).then(q => {
-            return User.findById(q.id).then(u => {
-                return u.update({
-                    first_name,
-                    last_name
-                }).then(q => q);
+            return User.findOne({ where: {id: q.id, deleted: false } }).then(u => {
+                if (u) {
+                    return u.update({
+                        first_name,
+                        last_name
+                    }).then(q => q);
+                } else {
+                    return null;
+                }
             });
         });
     }
 
     updateAsAdmin({ first_name, last_name, id }: UserViewModel) {
-        return User.findById(id).then(u => {
-            return u.update({
-                first_name,
-                last_name
-            }).then(q => q);
+        return User.findOne({ where: {id: id, deleted: false } }).then(u => {
+            if (u) {
+                return u.update({
+                    first_name,
+                    last_name
+                }).then(q => q);
+            } else {
+                return null;
+            }
         });
     }
 
-    updatePassword({ email, password }: UserAddModel) {
+    updatePassword({ password }: UserAddModel, token) {
         return bcrypt.hash(password, this._saltRounds)
             .then(hash => {
-                return User.findOne({ where: { email } }).then(u => {
-                    if (u) {
-                        return u.update({
-                            password: hash
-                        });
-                    }
+                return this.getAccount(token).then(q => {
+                    return User.findOne({ where: { id: q.id, deleted: false } }).then(u => {
+                        if (u) {
+                            return u.update({
+                                password: hash
+                            }).then(q => q);
+                        } else {
+                            return null;
+                        }
+                    });
                 });
             });
     }
 
-    requestPasswordReset({ email }: UserPasswordResetModel): Promise<ResponseMessage> {
+    requestPasswordReset({ email }: UserPasswordResetModel): Promise<UserViewModel> {
         const _this = this;
         const newPass = this.makeRandomString(8);
         const resetKey = this.makeRandomString(20);
@@ -82,7 +122,7 @@ export class UserService {
 
         return bcrypt.hash(newPass, this._saltRounds)
             .then(hash => {
-                return User.findOne({ where: { email }}).then(u => {
+                return User.findOne({ where: { email, deleted: false }}).then(u => {
                     if (u) {
                         return u.update({
                             password: hash,
@@ -90,32 +130,34 @@ export class UserService {
                             reset_date: moment().format('YYYY-MM-DD HH:mm:ss')
                         }).then(([rowsUpdated, ums]) => {
                             const msg = new ResponseMessage();
-                            if (rowsUpdated > 0) {
-                                const text = 'You have requested a password reset.  If you did not make this request, please contact ' +
-                                    process.env.CONTACT_EMAIL + '.  To reset your password, please visit ' + resetUrl + ' to create a new one.';
-                                const html = '<p>You have requested a password reset.  If you did not make this request, please contact '
-                                    + '<a href="mailto:' + process.env.CONTACT_EMAIL + '">' + process.env.CONTACT_EMAIL + '</a>. ' +
-                                    'To reset your password, please visit ' + resetUrl + ' to create a new one.';
-                                Email.sendEmail(process.env.CONTACT_EMAIL, [email], [], 'DonaldMcDougal.com password reset request',
-                                    text, html).then(() => {
-                                    _this.logger.debug('Password reset requested');
-                                    msg.success = 1;
-                                    msg.data.push('Password reset requested.');
-                                    return msg;
-                                }).then(msg => {
-                                    if (msg.success === 0) {
-                                        _this.logger.error(msg.data[0]);
-                                    }
-                                    return msg;
-                                }).catch((error) => {
-                                    console.log(error);
-                                });
-                            } else {
-                                msg.success = 0;
-                                msg.data.push('Password not updated: Email not found.');
+                            const text = 'You have requested a password reset.  If you did not make this request, please contact ' +
+                                process.env.CONTACT_EMAIL + '.  To reset your password, please visit ' + resetUrl + ' to create a new one.';
+                            const html = '<p>You have requested a password reset.  If you did not make this request, please contact '
+                                + '<a href="mailto:' + process.env.CONTACT_EMAIL + '">' + process.env.CONTACT_EMAIL + '</a>. ' +
+                                'To reset your password, please visit ' + resetUrl + ' to create a new one.';
+                            Email.sendEmail(process.env.CONTACT_EMAIL, [email], [], 'DonaldMcDougal.com password reset request',
+                                text, html).then(() => {
+                                _this.logger.debug('Password reset requested');
+                                msg.success = 1;
+                                msg.data.push('Password reset requested.');
                                 return msg;
-                            }
+                            }).then(msg => {
+                                if (msg.success === 0) {
+                                    _this.logger.error(msg.data[0]);
+                                }
+                                return msg;
+                            }).catch((error) => {
+                                _this.logger.error(error);
+                            });
+                            return {
+                                id: u.id,
+                                email: u.password,
+                                first_name: u.first_name,
+                                last_name: u.last_name
+                            };
                         });
+                    } else {
+                        return null;
                     }
                 });
             });
@@ -123,40 +165,54 @@ export class UserService {
 
     updatePasswordUsingResetKey({ password, reset_key }: UserPasswordResetKeyModel) {
         return bcrypt.hash(password, this._saltRounds).then(hash => {
-            return User.findOne({ where: { reset_key }}).then(u => {
+            return User.findOne({ where: { reset_key, deleted: false }}).then(u => {
                 if (u) {
                     return u.update({
                         password: hash,
                         reset_key: null,
                         reset_date: null
-                    });
+                    }).then(q => q);
+                } else {
+                    return null;
                 }
             });
         });
     }
 
     activateAccount({ activation_key }: UserActivateModel) {
-        return User.findOne({ where: { activation_key } }).then(u => {
+        return User.findOne({ where: { activation_key, deleted: false } }).then(u => {
             if (u) {
                 return u.update({
                     activated_date: moment().format('YYYY-MM-DD HH:mm:ss'),
                     activated: true,
                     activation_key: null
-                });
+                }).then(q => q);
+            } else {
+                return null;
             }
         });
     }
 
     remove({ id }: UserIdModel) {
         return User.findById(id).then(u => {
-            return u.destroy();
+            if (u) {
+                return u.update({ id: id, deleted: true }).then(() => {
+                    return true;
+                });
+            } else {
+                return false;
+            }
         });
     }
 
     login({ email }: UserAddModel) {
-        return User.findOne({ where: { email } }).then(u => {
-            const { id, email } = u!;
-            return { token: jwt.sign({ id, email }, this._jwtSecret) }
+        return User.findOne({ where: { email, deleted: false } }).then(u => {
+            if (u) {
+                const { id, email } = u!;
+                return { token: jwt.sign({ id, email }, this._jwtSecret) }
+            } else {
+                return null;
+            }
         });
     }
 
@@ -167,9 +223,13 @@ export class UserService {
                     resolve(false);
                     return;
                 }
-
-                resolve(true);
-                return;
+                return User.findOne({ where: { id: decoded['id'], deleted: false } }).then(u => {
+                    if (u) {
+                        resolve(true);
+                    } else {
+                        resolve(false);
+                    }
+                });
             })
         });
     }
@@ -182,7 +242,17 @@ export class UserService {
                 }
 
                 return this.isAdmin(decoded['id']).then(bool => {
-                    resolve(bool);
+                    if (!bool) {
+                        resolve(false);
+                    } else {
+                        return User.findOne({ where: { id: decoded['id'], deleted: false } }).then(u => {
+                            if (u) {
+                                resolve(true);
+                            } else {
+                                resolve(false);
+                            }
+                        });
+                    }
                 });
             })
         });
@@ -196,8 +266,15 @@ export class UserService {
                     return;
                 }
 
-                UserService._user = User.findById(decoded['id']);
-                resolve(UserService._user);
+                User.findOne({ where: { id: decoded['id'], deleted: false },
+                    attributes: ['id', 'email', 'first_name', 'last_name']
+                }).then(u => {
+                    if (u) {
+                        resolve(u);
+                    } else {
+                        resolve(null);
+                    }
+                });
                 return;
             });
         });
@@ -206,6 +283,7 @@ export class UserService {
     getAccounts(): Promise<UserViewModel[]> {
         return new Promise<UserViewModel[]>((resolve, reject) => {
             User.findAll({
+                where: { deleted: false },
                 attributes: ['id', 'email', 'first_name', 'last_name']
             }).then(users => {
                 resolve(users);
@@ -218,6 +296,9 @@ export class UserService {
             where: {
                 id: {
                     [Sequelize.Op.eq]: id
+                },
+                deleted: {
+                    [Sequelize.Op.eq]: false
                 }
             },
             attributes: ['id', 'email', 'first_name', 'last_name']
