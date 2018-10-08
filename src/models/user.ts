@@ -31,6 +31,7 @@ export interface UserAddModel {
     reset_key?: string
     reset_date?: string
     deleted?: boolean
+    admin?: boolean
 }
 
 export interface UserModel extends Sequelize.Model<UserModel, UserAddModel> {

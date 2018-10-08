@@ -27,18 +27,19 @@ userRouter.get('/api/account/verify', userRules['forUserAccount'], (req: core.Re
     const msg = new ResponseMessage();
 
     if (!errors.isEmpty()) {
+        /*
         msg.success = 0;
         msg.data = errors.array();
         return res.status(422).json(msg);
+        */
+        return res.json(false);
     }
 
     const payload = matchedData(req, {locations: ['headers']}) as any;
     const token = payload.authorization.split(' ')[1];
 
     return userService.verifyToken(token).then(t => {
-        msg.success = 1;
-        msg.data.push(t);
-        res.json(msg);
+        res.json(t);
     });
 });
 
@@ -49,18 +50,19 @@ userRouter.get('/api/account/verify/admin', userRules['forAdminAccount'], (req: 
     const msg = new ResponseMessage();
 
     if (!errors.isEmpty()) {
+        /*
         msg.success = 0;
         msg.data = errors.array();
         return res.status(422).json(msg);
+        */
+        return res.json(false);
     }
 
     const payload = matchedData(req, {locations: ['headers']}) as any;
     const token = payload.authorization.split(' ')[1];
 
     return userService.verifyAdminToken(token).then(t => {
-        msg.success = t ? 1 : 0;
-        msg.data.push(t);
-        res.json(msg);
+        res.json(t);
     });
 });
 

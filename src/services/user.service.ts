@@ -27,15 +27,15 @@ export class UserService {
         this.logger.level = process.env.LOGGER_LEVEL;
     }
 
-    register({ email, password }: UserAddModel): Promise<void> {
+    register({ email, password, first_name, last_name, admin }: UserAddModel): Promise<void> {
         const _this = this;
         return bcrypt.hash(password, this._saltRounds)
             .then(hash => {
-                return User.create({ email, password: hash, activation_key: this.makeRandomString(20) })
+                return User.create({ email, password: hash, first_name, last_name, activation_key: this.makeRandomString(20) })
                     .then(u => {
                         return User.count().then(c => {
                             let authorityId;
-                            if (c === 1) {
+                            if (c === 1 || admin) {
                                 // the first person to register is the admin.
                                 authorityId = 1;
                             } else {
